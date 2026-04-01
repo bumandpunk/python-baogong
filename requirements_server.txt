@@ -1,0 +1,10 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+Pillow>=10.0.0
+pillow-heif>=0.16.0
+pywin32>=305
+comtypes>=1.2.0
+pyperclip
+markdown
+beautifulsoup4
