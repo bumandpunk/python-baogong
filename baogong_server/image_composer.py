@@ -120,7 +120,7 @@ class ImageComposer:
     # ==================== 区块绘制 ====================
 
     def _draw_title(self, canvas: Image.Image, y: int, W: int, H: int) -> int:
-        """绘制标题区（双层红色边框 + "报 工"大字）。"""
+        """绘制标题区（双层红色边框 + "报 工"大字 + 左上角 logo）。"""
         draw = ImageDraw.Draw(canvas)
 
         # 外边框
@@ -144,6 +144,24 @@ class ImageComposer:
         tx = (W - tw) // 2
         ty = y + (H - th) // 2 - 4  # 轻微上移视觉居中
         draw.text((tx, ty), text, font=font, fill=config.TITLE_COLOR)
+
+        # 左上角 logo
+        import os as _os
+        logo_path = config.LOGO_PATH
+        if logo_path and _os.path.exists(logo_path):
+            try:
+                logo = Image.open(logo_path).convert("RGBA")
+                target_h = config.LOGO_SIZE
+                ratio = target_h / logo.height
+                target_w = int(logo.width * ratio)
+                logo = logo.resize((target_w, target_h), Image.LANCZOS)
+                margin = config.LOGO_MARGIN
+                lx = inner_margin + margin
+                ly = y + inner_margin + margin
+                # 用 alpha 通道合成，支持透明背景
+                canvas.paste(logo, (lx, ly), mask=logo.split()[3])
+            except Exception:
+                pass
 
         return y + H
 
