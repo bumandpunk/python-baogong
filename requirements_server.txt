@@ -8,3 +8,4 @@ comtypes>=1.2.0
 pyperclip
 markdown
 beautifulsoup4
+psutil>=5.9.0

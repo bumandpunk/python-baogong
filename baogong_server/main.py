@@ -23,6 +23,7 @@ import sys
 from datetime import date
 from pathlib import Path
 from typing import List, Optional
+import asyncio
 
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -42,6 +43,7 @@ if str(_SERVER_ROOT) not in sys.path:
 
 from baogong_server.image_composer import ReportMeta, compose_report
 from baogong_server.wechat_sender import send_report_image
+from baogong_server import config as srv_config
 
 # ==================== 日志 ====================
 logging.basicConfig(
@@ -146,8 +148,15 @@ async def _handle_report(
             date_str=date_str,
             images=pil_images,
         )
-        composed = compose_report(meta)
+        loop = asyncio.get_event_loop()
+        composed = await asyncio.wait_for(
+            loop.run_in_executor(None, compose_report, meta),
+            timeout=srv_config.REQUEST_TIMEOUT_COMPOSE,
+        )
         logger.info(f"图片合成完成，尺寸: {composed.size}")
+    except asyncio.TimeoutError:
+        logger.error("图片合成超时")
+        return _fail("图片合成超时，请减少图片数量后重试", status_code=500)
     except Exception as e:
         logger.exception(f"图片合成失败: {e}")
         return _fail(f"图片合成失败: {e}", status_code=500)
@@ -159,7 +168,13 @@ async def _handle_report(
 
     # 发送到微信群
     try:
-        success = await send_report_image(group_name, composed)
+        success = await asyncio.wait_for(
+            send_report_image(group_name, composed),
+            timeout=srv_config.REQUEST_TIMEOUT_SEND,
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"微信发送超时 -> 群「{group_name}」")
+        return _fail("微信发送超时，请检查微信客户端是否卡顿", status_code=500)
     except Exception as e:
         logger.exception(f"微信发送异常: {e}")
         return _fail(f"微信发送异常: {e}", status_code=500)
@@ -220,14 +235,16 @@ async def report_equipment(
 
 @app.get("/health", summary="健康检查")
 async def health():
-    return {"status": "ok", "service": "报工自动发送服务"}
+    from baogong_server.wechat_sender import WeChatSender
+    sender = WeChatSender._instance
+    wx_status = "connected" if (sender and sender._connected) else "disconnected"
+    return {"status": "ok", "wechat": wx_status, "service": "报工自动发送服务"}
 
 
 # ==================== 本地直接运行 ====================
 
 if __name__ == "__main__":
     import uvicorn
-    from baogong_server import config as srv_config
 
     uvicorn.run(
         "baogong_server.main:app",

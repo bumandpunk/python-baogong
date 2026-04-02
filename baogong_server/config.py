@@ -8,6 +8,23 @@ import os
 SERVER_HOST = os.environ.get("BAOGONG_HOST", "0.0.0.0")
 SERVER_PORT = int(os.environ.get("BAOGONG_PORT", "8000"))
 
+# 发送重试
+SEND_RETRY_COUNT = int(os.environ.get("BAOGONG_SEND_RETRY_COUNT", "2"))   # 失败后重试次数
+SEND_RETRY_DELAY = float(os.environ.get("BAOGONG_SEND_RETRY_DELAY", "2.0"))  # 重试间隔（秒）
+
+# 超时保护
+REQUEST_TIMEOUT_COMPOSE = int(os.environ.get("BAOGONG_TIMEOUT_COMPOSE", "30"))  # 图片合成超时（秒）
+REQUEST_TIMEOUT_SEND = int(os.environ.get("BAOGONG_TIMEOUT_SEND", "60"))        # 微信发送超时（秒）
+
+# 微信进程保活
+WECHAT_PROCESS_NAME = os.environ.get("BAOGONG_WX_PROCESS", "WeChat.exe")
+# 微信可执行文件路径，留空则自动在常见路径查找
+WECHAT_EXE_PATH = os.environ.get("BAOGONG_WX_EXE", "")
+# 微信启动后等待就绪的秒数
+WECHAT_LAUNCH_WAIT = int(os.environ.get("BAOGONG_WX_LAUNCH_WAIT", "8"))
+# 连接失败时是否尝试自动启动微信进程（仅 Windows）
+WECHAT_AUTO_LAUNCH = os.environ.get("BAOGONG_WX_AUTO_LAUNCH", "true").lower() == "true"
+
 # ==================== 画布参数 ====================
 CANVAS_WIDTH = 1080          # 画布固定宽度（px）
 CANVAS_BG_COLOR = (255, 255, 255)  # 白色背景
