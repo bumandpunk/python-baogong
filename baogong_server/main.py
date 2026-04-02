@@ -20,9 +20,10 @@
 import io
 import logging
 import sys
+import time
 from datetime import date
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 import asyncio
 
 from fastapi import FastAPI, File, Form, UploadFile
@@ -58,6 +59,40 @@ app = FastAPI(
     description="接收报工图片，合成标准报工图并自动发送到指定微信群",
     version="1.0.0",
 )
+
+# ==================== 防抖缓存 ====================
+# key: (report_type, reporter, group_name, date_str)  value: 上次成功发送的时间戳
+_debounce_cache: Dict[Tuple[str, str, str, str], float] = {}
+
+
+def _debounce_check(report_type: str, reporter: str, group_name: str, date_str: str) -> bool:
+    """
+    返回 True 表示命中防抖（请求应被拦截），False 表示可以继续处理。
+    preview 模式不走此逻辑（由调用方保证）。
+    """
+    window = srv_config.DEBOUNCE_WINDOW
+    if window <= 0:
+        return False
+    key = (report_type, reporter, group_name, date_str)
+    now = time.monotonic()
+    last = _debounce_cache.get(key)
+    if last is not None and (now - last) < window:
+        return True
+    return False
+
+
+def _debounce_mark(report_type: str, reporter: str, group_name: str, date_str: str) -> None:
+    """记录本次成功发送时间，并清理过期条目。"""
+    window = srv_config.DEBOUNCE_WINDOW
+    if window <= 0:
+        return
+    now = time.monotonic()
+    key = (report_type, reporter, group_name, date_str)
+    _debounce_cache[key] = now
+    # 清理过期条目，避免内存无限增长
+    expired = [k for k, v in _debounce_cache.items() if now - v >= window * 2]
+    for k in expired:
+        del _debounce_cache[k]
 
 
 # ==================== 工具函数 ====================
@@ -135,6 +170,18 @@ async def _handle_report(
         f"| 日期: {date_str} | 图片数: {len(images)} | 预览模式: {preview}"
     )
 
+    # 防抖检查（预览模式跳过）
+    if not preview and _debounce_check(report_type, reporter, group_name, date_str):
+        window = srv_config.DEBOUNCE_WINDOW
+        logger.warning(
+            f"防抖拦截 | {report_type} | 汇报人: {reporter} | 群: {group_name} "
+            f"| {window}s 内已发送过，忽略重复请求"
+        )
+        return _fail(
+            f"重复请求已拦截：{window} 秒内已向群「{group_name}」发送过相同报工，请勿重复提交",
+            status_code=429,
+        )
+
     # 读取图片
     pil_images = await _read_images(images)
     if not pil_images:
@@ -180,6 +227,7 @@ async def _handle_report(
         return _fail(f"微信发送异常: {e}", status_code=500)
 
     if success:
+        _debounce_mark(report_type, reporter, group_name, date_str)
         return _ok(f"{report_type}已成功发送到群「{group_name}」")
     else:
         return _fail(f"微信发送失败，请检查微信客户端是否已登录、群名是否正确", status_code=500)
